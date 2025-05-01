@@ -1,0 +1,1687 @@
+*** Z MODULO ***
+
+  int Mod( int a, int b) {
+    // Handle division by zero
+    if (b == 0) {
+        fprintf(stderr, "Error: Modulo by zero.\n");
+        return 0; // Or handle error appropriately
+    }
+    return ( a % b );
+  }
+
+*** Z MIN ***
+
+  int Min (int a, int b) {
+    return (a < b) ? a : b;
+  }
+
+*** Z MAX ***
+
+  int Max (int a, int b) {
+    return (a > b) ? a : b;
+  }
+
+*** Z EXP ***
+
+  // Simple integer exponentiation. Prone to overflow.
+  int Exp (int a, int b) {
+    int i;
+    long long Ex = 1; // Use long long for intermediate calculation
+
+    if (b < 0) return 0; // Define result for negative exponent (integer case)
+    if (b == 0) return 1;
+
+    for (i = 1; i <= b; i++) {
+      // Basic overflow check (not fully reliable)
+      if ((a > 0 && Ex > (2147483647 / a)) || (a < 0 && Ex < (-2147483648 / a))) {
+           fprintf(stderr, "Warning: Potential integer overflow in Exp(%d, %d).\n", a, b);
+           // Return max/min int or specific error?
+           return (a > 0) ? 2147483647 : -2147483648;
+      }
+      Ex = Ex * a;
+    }
+    // Final check if Ex fits in int range
+    if (Ex > 2147483647 || Ex < -2147483648) {
+        fprintf(stderr, "Warning: Integer overflow occurred in Exp(%d, %d).\n", a, b);
+        return (Ex > 0) ? 2147483647 : -2147483648;
+    }
+    return (int)Ex;
+  }
+
+*** Z ALEANOMBRE ***
+
+  // Needs srand(time(NULL)) called once in main.
+  int Aleanombre( int N ) {
+    if (N <= 0) return 0; // Result for non-positive N
+    return ( rand() % N );
+  }
+
+*** Z ALEACHAINE ***
+
+  // Needs srand(time(NULL)) called once in main.
+  // Caller must free the returned string.
+  char *Aleachaine ( int N ) {
+    int k;
+    if (N < 0) return NULL; // Invalid length
+    if (N == 0) {
+        char *empty_str = malloc(1);
+        if (empty_str) empty_str[0] = '\0';
+        return empty_str; // Return empty string for N=0
+    }
+
+    char *Chaine = malloc(N + 1); // Allocate space for N chars + null terminator
+    if (!Chaine) {
+        perror("malloc failed in Aleachaine");
+        return NULL;
+    }
+
+    // Use static const for efficiency
+    static const char Chr1[] = "abcdefghijklmnopqrstuvwxyz";
+    static const char Chr2[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const int len1 = sizeof(Chr1) - 1;
+    const int len2 = sizeof(Chr2) - 1;
+
+    for (k = 0; k < N; k++) {
+      switch ( rand() % 2 ) {
+        case 0 : Chaine[k] = Chr1[rand() % len1]; break;
+        case 1 : Chaine[k] = Chr2[rand() % len2]; break;
+      }
+    }
+    Chaine[k] = '\0'; // Null-terminate the string
+
+    return Chaine;
+  }
+
+*** Z LONGCHAINE ***
+
+  // Renamed in runtime to ZStringLength for clarity.
+  // Takes standard C string (const char *).
+  int ZStringLength ( const char * Ch ) {
+    return (Ch ? strlen(Ch) : 0); // Handle NULL input gracefully
+  }
+
+*** Z CARACT ***
+
+  // Renamed in runtime to ZGetCharStr for clarity.
+  // Returns a new string containing the character at 1-based index I.
+  // Caller must free the returned string.
+  char *ZGetCharStr ( const char * Ch , int I ) {
+    if (!Ch || I <= 0) return NULL; // Validate input
+
+    int len = strlen(Ch);
+    if (I > len) return NULL; // 1-based index out of bounds
+
+    char *s = malloc(2); // Space for character + null terminator
+    if (!s) {
+        perror("malloc failed in ZGetCharStr");
+        return NULL;
+    }
+    s[0] = Ch[I - 1]; // Convert 1-based index to 0-based
+    s[1] = '\0';
+    return s;
+  }
+
+*** Traitement des fichiers ouverts ***
+
+  /* Internal file tracking list management */
+
+  // Node structure for the linked list
+  struct _Noeud {
+    FILE * Var_fich ;     // The C file handle
+    char * Nom_fich ;     // Allocated copy of the file path/name
+    int Sauv_pos;         // Saved position (e.g., during nested opens)
+    struct _Noeud *Suiv ; // Pointer to the next node
+  };
+
+  typedef struct _Noeud * _Ptr_Noeud;
+
+  // Global head of the list
+  _Ptr_Noeud _Pile_ouverts = NULL;
+
+  /* Test if a file path is already tracked */
+  _Ptr_Noeud _Ouvert ( const char * Fp) { // Take const char*
+    if (!Fp) return NULL;
+    _Ptr_Noeud P = _Pile_ouverts;
+    while (P != NULL) {
+      if (P->Nom_fich && strcmp(P->Nom_fich, Fp) == 0) {
+        return P; // Found
+      }
+      P = P->Suiv;
+    }
+    return NULL; // Not found
+  }
+
+  /* Add a file path and handle to the tracking list */
+  void _Empiler_ouvert ( const char *Fp, FILE *Fl) { // Take const char*
+    if (!Fp || !Fl) return;
+
+    _Ptr_Noeud P = (_Ptr_Noeud) malloc(sizeof(struct _Noeud));
+    if (!P) {
+      perror("malloc failed in _Empiler_ouvert");
+      return;
+    }
+
+    P->Nom_fich = strdup(Fp); // Use strdup to copy the filename
+    if (!P->Nom_fich) {
+      free(P);
+      perror("strdup failed in _Empiler_ouvert");
+      return;
+    }
+
+    P->Var_fich = Fl;
+    // Store current position, default to 0 on error
+    P->Sauv_pos = ftell(Fl);
+    if (P->Sauv_pos < 0) P->Sauv_pos = 0;
+
+    // Add to head of list
+    P->Suiv = _Pile_ouverts;
+    _Pile_ouverts = P;
+  }
+
+  /* Remove a node by file handle and return its allocated name */
+  /* Caller must free the returned string. Returns NULL on failure. */
+  char * _Depiler_ouvert ( FILE *Fl) {
+    if (_Pile_ouverts == NULL || !Fl) return NULL;
+
+    _Ptr_Noeud P = _Pile_ouverts;
+    _Ptr_Noeud Prec = NULL;
+
+    // Find the node
+    while (P != NULL && P->Var_fich != Fl ) {
+      Prec = P;
+      P = P->Suiv;
+    }
+
+    if (P == NULL) return NULL; // Handle not found
+
+    // Found node P, make a copy of the name
+    char * Fp_copy = strdup(P->Nom_fich);
+
+    // Unlink node P
+    if (Prec != NULL) { // Not head
+      Prec->Suiv = P->Suiv;
+    } else { // Head
+      _Pile_ouverts = P->Suiv;
+    }
+
+    // Free the node's resources
+    free(P->Nom_fich); // Free the filename stored inside the node
+    free(P);           // Free the node struct itself
+
+    if (!Fp_copy) {
+        perror("strdup failed in _Depiler_ouvert"); // Should not happen if P->Nom_fich was valid
+    }
+    return Fp_copy;
+  }
+
+*** Y Fichiers avec entete ***
+
+  /* File Type: %Type_fichier% (With Header) */
+
+  /* Typedefs for fields and header fields */
+1 typedef %Type_champI% Typechamp%I%_%Type_fichier%;
+2 typedef %Type_enteteI% Typeentete%I%_%Type_fichier% ;
+
+  /* C struct representing one record on disk */
+  typedef struct {
+0     Typechamp%I%_%Type_fichier% Champ%I% ;
+  } Typestruct1_%Type_fichier%_Buf;
+
+  /* Pointer type commonly used in Z for record buffers */
+  typedef Typestruct1_%Type_fichier%_Buf * Typestruct1_%Type_fichier% ;
+
+  /* C struct representing the file header on disk */
+  typedef struct {
+4     Typeentete%I%_%Type_fichier% Entete%I% ;
+  } Typestruct2_%Type_fichier% ;
+
+  /* Accessor function for record fields */
+7 Typechamp%I%_%Type_fichier% Struct%I%_%Type_fichier% ( Typestruct1_%Type_fichier% Buf ) {
+    // Assumes Buf is a valid pointer
+    // Z code like Buf.ChampI maps to StructI_FileType(Buf)
+    return Buf->Champ%I%;
+  }
+
+  /* Assignment function for record fields */
+8 void Aff_struct%I%_%Type_fichier% ( Typestruct1_%Type_fichier% Buf, Typechamp%I%_%Type_fichier% Val ) {
+    // Assumes Buf is a valid pointer
+    // $AFF Buf->Champ%I% $$=$$ Val $AFF;
+    // Transpiler generates appropriate assignment based on field type:
+    // Simple: Buf->Champ%I% = Val;
+    // Struct/Array: memcpy(&Buf->Champ%I%, &Val, sizeof(Typechamp%I%_%Type_fichier%));
+  }
+
+  /* Global buffer holding the *current* header state for this file type */
+  /* WARNING: Only supports one file of this type having an active header state */
+  Typestruct2_%Type_fichier% Bloc_caract_%Type_fichier%;
+
+  /* File Operations */
+
+  /* Open File: pf_ points to the FILE* variable in Z code */
+  void Ouvrir_%Type_fichier% ( FILE **pf_%Type_fichier%, const char *Fp, const char * Mode ) {
+    if (!pf_%Type_fichier% || !Fp || !Mode) return; // Basic validation
+
+$   _Ptr_Noeud P = _Ouvert(Fp); // Check if already tracked
+$   if ( P != NULL ) {
+$     /* Already tracked: Update header on disk, close old handle, prepare to reopen */
+$     if (P->Var_fich) { // Only if handle exists
+$       P->Sauv_pos = ftell (P->Var_fich);
+$       if (P->Sauv_pos < 0) P->Sauv_pos = 0; // Reset pos on error
+$       fseek( P->Var_fich, 0, SEEK_SET);
+$       fwrite(&Bloc_caract_%Type_fichier%, sizeof(Typestruct2_%Type_fichier%), 1, P->Var_fich);
+$       fclose(P->Var_fich);
+$       P->Var_fich = NULL; // Mark internal handle as closed
+$     }
+$   }
+
+    /* Open/Reopen the file */
+    FILE *f = NULL;
+    if ( strcmp(Mode,"A") == 0) { // "Ancien" mode (Update/Append?)
+      f = fopen(Fp, "r+b");       // Try opening existing file for read/write
+      if (f == NULL) {            // If failed (doesn't exist?), try creating it
+        f = fopen(Fp, "w+b");
+        if (f != NULL) {          // If created successfully, write initial header
+          fwrite(&Bloc_caract_%Type_fichier%, sizeof(Typestruct2_%Type_fichier%), 1, f);
+          // We might want to rewind: fseek(f, 0, SEEK_SET); depends on desired state after open
+        }
+      } else { // Opened existing file (r+b worked)
+         // Read the header from disk into the global buffer
+         fread(&Bloc_caract_%Type_fichier%, sizeof(Typestruct2_%Type_fichier%), 1, f);
+         // Position is now after header, ready for record I/O
+      }
+    } else { // "Nouveau" mode (Create/Overwrite)
+      f = fopen(Fp, "w+b");
+      if (f != NULL) { // Write header for new file
+        fwrite(&Bloc_caract_%Type_fichier%, sizeof(Typestruct2_%Type_fichier%), 1, f);
+        // Position is now after header
+      }
+    }
+
+    if (f == NULL) { // Handle fopen failure
+      perror("Failed to open file in Ouvrir");
+      *pf_%Type_fichier% = NULL;
+      // Should we remove P from the list if it exists but reopen failed?
+      return;
+    }
+
+    // Update the Z variable with the new handle
+    *pf_%Type_fichier% = f;
+
+$   if (P != NULL) { // If it was already tracked, update its handle and maybe position
+$     P->Var_fich = f; // Store the new, valid handle
+$     // Restore saved position? Or position after header? Let's stay after header.
+$     // fseek(f, P->Sauv_pos, SEEK_SET); // Optional: restore original position
+$   } else { // Not tracked before, add it to the list
+$     _Empiler_ouvert( Fp, f );
+$   }
+  }
+
+  /* Close File */
+  void Fermer_%Type_fichier% ( FILE * f_%Type_fichier% ) {
+    if (!f_%Type_fichier%) return;
+
+$   // Remove from tracking list, get allocated filename copy
+$   char * Fp = _Depiler_ouvert(f_%Type_fichier%);
+$   if (!Fp) {
+$      // File wasn't tracked? Or error in depiler. Should we still try to close?
+$      // Let's assume if we have a handle, we should try to close it.
+$      // But we won't have Fp to check for other open instances.
+$      fprintf(stderr, "Warning: File handle passed to Fermer_%Type_fichier% was not tracked.\n");
+$   }
+
+    // Write the current global header buffer to disk before closing
+    fseek( f_%Type_fichier%, 0, SEEK_SET);
+    fwrite(&Bloc_caract_%Type_fichier%, sizeof(Typestruct2_%Type_fichier%), 1, f_%Type_fichier%);
+    fclose(f_%Type_fichier%) ;
+
+$   if (Fp) { // Only if we successfully got the filename
+$     // Check if another instance of the same file is still tracked
+$     _Ptr_Noeud P_other =  _Ouvert (Fp);
+$     if ( P_other != NULL && P_other->Var_fich != NULL) {
+$       // If yes, load *its* header state into the global buffer
+$       // This makes the global buffer reflect the state of the *remaining* open file.
+$       fseek(P_other->Var_fich, 0, SEEK_SET);
+$       fread(&Bloc_caract_%Type_fichier%, sizeof(Typestruct2_%Type_fichier%), 1, P_other->Var_fich);
+$       // Restore its position (which might have been changed by the fseek/fread)
+$       fseek(P_other->Var_fich, P_other->Sauv_pos, SEEK_SET);
+$     }
+$     free(Fp); // Free the filename copy from _Depiler_ouvert
+$   }
+  }
+
+  /* Get Header Field Value */
+5 Typeentete%I%_%Type_fichier% Entete%I%_%Type_fichier%( FILE * f_%Type_fichier%) {
+    // Assumes f is valid (maybe add check?)
+    // Returns value from the global header buffer.
+    return Bloc_caract_%Type_fichier%.Entete%I%;
+  }
+
+  /* Affect Header Field Value */
+6 void Aff_entete%I%_%Type_fichier% ( FILE * f_%Type_fichier%, Typeentete%I%_%Type_fichier% VAL) {
+    // Assumes f is valid (maybe add check?)
+    // Modifies the global header buffer. Changes are persisted on Fermer/Ouvrir(A).
+    // $AFF Bloc_caract_%Type_fichier%.Entete%I% $$=$$ VAL $AFF;
+    // Transpiler generates appropriate assignment based on header field type:
+    // Simple: Bloc_caract_%Type_fichier%.Entete%I% = VAL;
+    // Struct/Array: memcpy(&Bloc_caract_%Type_fichier%.Entete%I%, &VAL, sizeof(Typeentete%I%_%Type_fichier%));
+  }
+
+  /* Write Record Sequentially */
+  void Ecrireseq_%Type_fichier% ( FILE * f_%Type_fichier%, Typestruct1_%Type_fichier% Buf ) {
+    // Assumes f is valid and Buf points to a valid record buffer
+    // E     Buffer <-- Buf (Implied: Buf is ready)
+    fwrite(Buf, sizeof( Typestruct1_%Type_fichier%_Buf), 1, f_%Type_fichier%);
+  }
+
+  /* Write Record Directly */
+  void Ecriredir_%Type_fichier% ( FILE * f_%Type_fichier%, Typestruct1_%Type_fichier% Buf, int N ) {
+    // Assumes f is valid, Buf is valid, N >= 1
+    // E     Buffer <-- Buf (Implied: Buf is ready)
+    long offset = (long)((N - 1) * sizeof(Typestruct1_%Type_fichier%_Buf)) + sizeof(Typestruct2_%Type_fichier%);
+    fseek(f_%Type_fichier%, offset, SEEK_SET);
+    fwrite(Buf, sizeof( Typestruct1_%Type_fichier%_Buf), 1, f_%Type_fichier%);
+  }
+
+  /* Read Record Sequentially */
+  void Lireseq_%Type_fichier% ( FILE * f_%Type_fichier%, Typestruct1_%Type_fichier% Buf ) {
+    // Assumes f is valid and Buf points to allocated memory for the record
+    // L     Buf <-- Buffer (fread reads directly into Buf)
+    size_t read_count = fread(Buf, sizeof( Typestruct1_%Type_fichier%_Buf), 1, f_%Type_fichier%);
+    if (read_count != 1) {
+      // Handle EOF or read error - Z definition needed. Clear buffer? Set flag?
+      // Example: memset(Buf, 0, sizeof(Typestruct1_%Type_fichier%_Buf));
+    }
+  }
+
+  /* Read Record Directly */
+  void Liredir_%Type_fichier% ( FILE * f_%Type_fichier%, Typestruct1_%Type_fichier% Buf, int N) {
+    // Assumes f is valid, Buf is allocated, N >= 1
+    long offset = (long)((N - 1) * sizeof(Typestruct1_%Type_fichier%_Buf)) + sizeof(Typestruct2_%Type_fichier%);
+    fseek(f_%Type_fichier%, offset, SEEK_SET);
+    // L     Buf <-- Buffer (fread reads directly into Buf)
+    size_t read_count = fread(Buf, sizeof( Typestruct1_%Type_fichier%_Buf), 1, f_%Type_fichier%);
+     if (read_count != 1) {
+      // Handle error (e.g., reading beyond EOF) - Z definition needed.
+      // Example: memset(Buf, 0, sizeof(Typestruct1_%Type_fichier%_Buf));
+    }
+  }
+
+  /* Append Record */
+  void Rajouter_%Type_fichier% ( FILE * f_%Type_fichier%, Typestruct1_%Type_fichier% Buf ) {
+    // Assumes f is valid and Buf is valid
+    // E     Buffer <-- Buf (Implied: Buf is ready)
+    fseek(f_%Type_fichier%, 0, SEEK_END); /* Go to end of file */
+    fwrite(Buf, sizeof( Typestruct1_%Type_fichier%_Buf), 1, f_%Type_fichier%);
+  }
+
+  /* Check End Of File */
+  bool Finfich_%Type_fichier% (FILE * f_%Type_fichier%) {
+    if (!f_%Type_fichier%) return true; // Treat NULL handle as EOF
+    long current_pos = ftell(f_%Type_fichier%);
+    if (current_pos < 0) { perror("ftell failed in Finfich"); return true; }
+
+    fseek(f_%Type_fichier%, 0, SEEK_END);
+    long end_pos = ftell(f_%Type_fichier%);
+    if (end_pos < 0) { perror("ftell end failed in Finfich"); return true; }
+
+    // Restore original position
+    fseek(f_%Type_fichier%, current_pos, SEEK_SET);
+
+    // EOF if current position is at or past the end of the file
+    return (current_pos >= end_pos);
+    // Alternative: Check feof(f) after a failed read? Requires modifying Lire functions.
+  }
+
+  /* Get Next Available Block Number */
+  int Alloc_bloc_%Type_fichier% (FILE * f_%Type_fichier%) {
+    if (!f_%Type_fichier%) return 0; // Or -1 for error?
+    fseek(f_%Type_fichier%, 0, SEEK_END);
+    long end_pos = ftell(f_%Type_fichier%);
+    if (end_pos < 0) { perror("ftell failed in Alloc_bloc"); return 0; }
+
+    long header_size = sizeof( Typestruct2_%Type_fichier%);
+    long data_size = end_pos - header_size;
+    if (data_size < 0) data_size = 0; // No data records yet
+
+    long record_size = sizeof (Typestruct1_%Type_fichier%_Buf);
+    if (record_size <= 0) return 0; // Avoid division by zero
+
+    long num_records = data_size / record_size;
+    // Return the 1-based index for the *next* record
+    return (int)(num_records + 1);
+  }
+
+*** Q Fichiers sans entete ***
+
+  /* File Type: %Type_fichier% (No Header) */
+
+  /* Typedef for record fields */
+1 typedef %Type_champI% Typechamp%I%_%Type_fichier%;
+
+  /* C struct representing one record on disk */
+  typedef struct {
+0     Typechamp%I%_%Type_fichier% Champ%I% ;
+  } Typestruct1_%Type_fichier%_Buf;
+
+  /* Pointer type commonly used in Z for record buffers */
+  typedef Typestruct1_%Type_fichier%_Buf * Typestruct1_%Type_fichier% ;
+
+  /* Accessor function for record fields */
+4 Typechamp%I%_%Type_fichier% Struct%I%_%Type_fichier% ( Typestruct1_%Type_fichier% Buf ) {
+    // Assumes Buf is valid
+    return Buf->Champ%I%;
+  }
+
+  /* Assignment function for record fields */
+5 void Aff_struct%I%_%Type_fichier% ( Typestruct1_%Type_fichier% Buf, Typechamp%I%_%Type_fichier% Val ) {
+    // Assumes Buf is valid
+    // $AFF Buf->Champ%I% $$=$$ Val $AFF;
+    // Transpiler generates assignment based on type: =, memcpy, etc.
+  }
+
+  /* File Operations */
+
+  void Ouvrir_%Type_fichier% ( FILE **pf_%Type_fichier%, const char *Fp, const char * Mode ) {
+    if (!pf_%Type_fichier% || !Fp || !Mode) return;
+
+$   _Ptr_Noeud P = _Ouvert(Fp);
+$   if ( P != NULL && P->Var_fich != NULL) {
+$     P->Sauv_pos = ftell (P->Var_fich);
+$     if (P->Sauv_pos < 0) P->Sauv_pos = 0;
+$     fclose(P->Var_fich);
+$     P->Var_fich = NULL;
+$   }
+
+    FILE *f = NULL;
+    if ( strcmp(Mode,"A") == 0) { // Update/Append? (Use 'ab+' ? or 'r+b' then 'wb'?)
+        f = fopen(Fp, "r+b"); // Try read/write existing
+        if (f == NULL) f = fopen(Fp, "wb"); // If not exist, create write/binary
+    } else { // Create/Overwrite
+        f = fopen(Fp, "wb");
+    }
+
+    if (f == NULL) {
+        perror("Failed to open file in Ouvrir");
+        *pf_%Type_fichier% = NULL;
+        return;
+    }
+
+    *pf_%Type_fichier% = f;
+
+$   if (P != NULL) { // Update tracked handle
+$     P->Var_fich = f;
+$     // fseek(f, P->Sauv_pos, SEEK_SET); // Optional: restore position
+$   } else { // Add new tracking entry
+$     _Empiler_ouvert( Fp, f );
+$   }
+  }
+
+  void Fermer_%Type_fichier% ( FILE * f_%Type_fichier% ) {
+    if (!f_%Type_fichier%) return;
+
+$   char * Fp = _Depiler_ouvert(f_%Type_fichier%);
+$   // We don't need Fp for non-headered files unless for debugging or complex scenarios.
+
+    fclose(f_%Type_fichier%);
+
+$   if (Fp) {
+$     // Check if other instances still open (P_other = _Ouvert(Fp))?
+$     // No header state to sync for non-headered files.
+$     free(Fp); // Free the filename copy
+$   }
+  }
+
+  void Ecrireseq_%Type_fichier% ( FILE * f_%Type_fichier%, Typestruct1_%Type_fichier% Buf ) {
+    // Assumes f and Buf are valid
+    // E     Buffer <-- Buf
+    fwrite(Buf, sizeof( Typestruct1_%Type_fichier%_Buf), 1, f_%Type_fichier%);
+  }
+
+  void Ecriredir_%Type_fichier% ( FILE * f_%Type_fichier%, Typestruct1_%Type_fichier% Buf, int N ) {
+    // Assumes f, Buf valid, N >= 1
+    // E     Buffer <-- Buf
+    long offset = (long)(N - 1) * sizeof(Typestruct1_%Type_fichier%_Buf);
+    fseek(f_%Type_fichier%, offset, SEEK_SET);
+    fwrite(Buf, sizeof( Typestruct1_%Type_fichier%_Buf), 1, f_%Type_fichier%);
+  }
+
+  void Lireseq_%Type_fichier% ( FILE * f_%Type_fichier%, Typestruct1_%Type_fichier% Buf ) {
+    // Assumes f valid, Buf allocated
+    // L     Buf <-- Buffer
+    size_t read_count = fread(Buf, sizeof( Typestruct1_%Type_fichier%_Buf), 1, f_%Type_fichier%);
+    if (read_count != 1) { /* Handle EOF/Error */ }
+  }
+
+  void Liredir_%Type_fichier% ( FILE * f_%Type_fichier%, Typestruct1_%Type_fichier% Buf, int N) {
+    // Assumes f valid, Buf allocated, N >= 1
+    long offset = (long)(N - 1) * sizeof(Typestruct1_%Type_fichier%_Buf);
+    fseek(f_%Type_fichier%, offset, SEEK_SET);
+    // L     Buf <-- Buffer
+    size_t read_count = fread(Buf, sizeof( Typestruct1_%Type_fichier%_Buf), 1, f_%Type_fichier%);
+    if (read_count != 1) { /* Handle EOF/Error */ }
+  }
+
+  void Rajouter_%Type_fichier% ( FILE * f_%Type_fichier%, Typestruct1_%Type_fichier% Buf ) {
+    // Assumes f, Buf valid
+    // E     Buffer <-- Buf
+    fseek(f_%Type_fichier%, 0, SEEK_END);
+    fwrite(Buf, sizeof( Typestruct1_%Type_fichier%_Buf), 1, f_%Type_fichier%);
+  }
+
+  bool Finfich_%Type_fichier% (FILE * f_%Type_fichier%) {
+    if (!f_%Type_fichier%) return true;
+    long current_pos = ftell(f_%Type_fichier%);
+    if (current_pos < 0) { perror("ftell failed"); return true; }
+    fseek(f_%Type_fichier%, 0, SEEK_END);
+    long end_pos = ftell(f_%Type_fichier%);
+    if (end_pos < 0) { perror("ftell end failed"); return true; }
+    fseek(f_%Type_fichier%, current_pos, SEEK_SET);
+    return (current_pos >= end_pos);
+  }
+
+  int Alloc_bloc_%Type_fichier% (FILE * f_%Type_fichier%) {
+    if (!f_%Type_fichier%) return 0;
+    fseek(f_%Type_fichier%, 0, SEEK_END);
+    long end_pos = ftell(f_%Type_fichier%);
+    if (end_pos < 0) { perror("ftell failed"); return 0; }
+    long record_size = sizeof (Typestruct1_%Type_fichier%_Buf);
+    if (record_size <= 0) return 0;
+    long num_records = end_pos / record_size;
+    return (int)(num_records + 1); // 1-based index for next record
+  }
+
+*** Structures statiques ***
+
+  /* Static Structure: %Types% */
+
+  /* C struct definition */
+2 struct %Types% {
+3     %Type_champI% Champ%I% ; // Transpiler loops through fields, replacing %Type_champI% and Champ%I%
+  };
+  /* Typedef for the struct type */
+0 typedef struct %Types% %Typestruct%; // User-facing name %Typestruct% = %Types% ?
+  /* Typedef for a pointer to the struct */
+0 typedef %Typestruct%* Typestr_%Types%;
+
+  /* Accessor function for field Champ%I% */
+4 %Type_champI% Struct%I%_%Types% ( Typestr_%Types% S ) { // Takes pointer
+    // Assumes S is valid
+    return S->Champ%I%;
+  }
+
+  /* Assignment function for field Champ%I% */
+5 void Aff_struct%I%_%Types% ( Typestr_%Types% S, %Type_champI% Val ) { // Takes pointer
+    // Assumes S is valid
+    // $AFF S->Champ%I% $$=$$ Val $AFF;
+    // Transpiler generates: = or memcpy based on %Type_champI%
+  }
+
+*** Structures dynamiques ***
+
+  /* Dynamic Structure: %Types% */
+
+  /* Forward declaration */
+  struct %Types%;
+
+  /* Pointer type definition */
+0 typedef struct %Types% * %Pointeur% ;
+
+  /* C struct definition */
+2 struct %Types% {
+3     %Type_champI% Champ%I% ; // Transpiler loops through fields
+  };
+
+  /* Accessor function for field Champ%I% */
+4 %Type_champI% Struct%I%_%Types% ( %Pointeur% S ) {
+    // Assumes S is valid
+    return S->Champ%I% ;
+  }
+
+  /* Assignment function for field Champ%I% */
+5 void Aff_struct%I%_%Types% ( %Pointeur% S, %Type_champI% Val ) {
+    // Assumes S is valid
+    // $AFF S->Champ%I% $$=$$ Val $AFF;
+    // Transpiler generates: = or memcpy based on %Type_champI%
+  }
+
+  /* Allocation function */
+6 void Alloc_struct_%Types%( %Pointeur% *S ) { // Takes pointer-to-pointer
+7   *S = (%Pointeur%) malloc( sizeof( struct %Types% ));
+    if (!*S) {
+      perror("malloc failed in Alloc_struct");
+      // Exit or handle error based on Z semantics
+    } else {
+      // Optional: Initialize fields to zero/NULL
+      // memset(*S, 0, sizeof(struct %Types%));
+    }
+  }
+
+  /* Free function */
+6 void Liber_struct_%Types%( %Pointeur% S ) { // Takes pointer
+    free(S);
+    // Z variable holding S is now dangling, user should set to NULL
+  }
+
+*** Tableaux statiques ***
+
+  /* Static Array: %Codevecteur% */
+  /* Element Type: %% */
+  /* Dimensions: Transpiler needs to know dims for AUTRES2 */
+
+  typedef %% Typeelem_%Codevecteur%;
+
+  /* Accessor function */
+  /* AUTRES1: , int I2, int I3... */
+  /* AUTRES2: C index expression generated by transpiler (e.g., I1*DIM2 + I2) */
+  /* V passed as pointer to first element */
+  Typeelem_%Codevecteur% Element_%Codevecteur% ( Typeelem_%Codevecteur%* V , int I1 AUTRES1 ) {
+    // Assumes V is valid and indices are in bounds
+    return *(V + ( AUTRES2 )); // Parentheses for safety if AUTRES2 is complex
+  }
+
+  /* Assignment function */
+  void Aff_element_%Codevecteur% ( Typeelem_%Codevecteur%* V , int I1 AUTRES1, Typeelem_%Codevecteur% Val ) {
+    // Assumes V is valid and indices are in bounds
+    // $AFF *(V + AUTRES2 ) $$=$$ Val $AFF;
+    // Transpiler generates: = or memcpy based on Typeelem_%Codevecteur%
+  }
+
+*** Tableaux dynamiques ***
+
+  /* Dynamic Array: %Codevecteur% */
+  /* Element Type: %% */
+  /* Pointer Type: %Pointeur% (e.g., int*) */
+  /* Dimensions: Needed for allocation (PROD) and access (AUTRES2) */
+
+  typedef %% Typeelem_%Codevecteur%;
+  typedef Typeelem_%Codevecteur%* %Pointeur%;
+
+  /* Allocation function - transpiler must calculate PROD */
+  /* PROD = total size in bytes (Dim1 * Dim2 * ... * sizeof(Element)) */
+  void Alloc_tab_%Codevecteur% ( %Pointeur% *T /*, dimensions... */ ) { // Takes ptr-to-ptr
+    *T = (%Pointeur%) malloc( PROD );
+    if (!*T) {
+      perror("malloc failed in Alloc_tab");
+      // Handle error
+    } else {
+      // Optional: Initialize elements? memset(*T, 0, PROD);
+    }
+  }
+
+  /* Free function */
+  void Liber_tab_%Codevecteur% ( %Pointeur% T ) { // Takes pointer
+    free(T);
+    // Z variable holding T is now dangling
+  }
+
+  /* Accessor function - transpiler needs dimensions for AUTRES2 */
+  /* AUTRES1: , int I2, int I3... */
+  /* AUTRES2: C index expression (e.g., I1*DIM2 + I2) */
+  Typeelem_%Codevecteur% Element_%Codevecteur% ( %Pointeur% V , int I1 AUTRES1 ) {
+    // Assumes V is valid and indices are in bounds
+    return *(V + ( AUTRES2 ));
+  }
+
+  /* Assignment function - transpiler needs dimensions for AUTRES2 */
+  void Aff_element_%Codevecteur% ( %Pointeur% V, int I1 AUTRES1, Typeelem_%Codevecteur% Val ) {
+    // Assumes V is valid and indices are in bounds
+    // $AFF *(V + AUTRES2 ) $$=$$ Val $AFF;
+    // Transpiler generates: = or memcpy based on Typeelem_%Codevecteur%
+  }
+
+*** Listes lin aires cha n es ***
+
+  /* Singly Linked List: Element Type %% */
+  /* Placeholders: %Typeelem%, %Maillon%, %Pointeur%, %Allouer%, %Aff_val%, etc. */
+
+  typedef %% %Typeelem%   ; // Element type
+  typedef struct %Maillon% * %Pointeur% ; // Node pointer type
+
+  struct %Maillon% { // Node structure
+    %Typeelem%  Val ;
+    %Pointeur% Suiv ;
+  };
+
+  /* Allocate a new node */
+  void %Allouer% (%Pointeur% *P) { // Takes ptr-to-ptr
+    *P = (%Pointeur%) malloc( sizeof( struct %Maillon% ));
+    if (!*P) { perror("malloc failed in %Allouer%"); return; }
+    // (*P)->Val = /* Default value based on %Typeelem%? */;
+    (*P)->Suiv = NULL;
+  }
+
+  /* Assign value to a node */
+  void %Aff_val%(%Pointeur% P, %Typeelem% Val) {
+    if (!P) return; // Check for NULL pointer
+    // $AFF P->Val $$=$$ Val $AFF;
+    // Transpiler generates: =, memcpy based on %Typeelem%
+  }
+
+  /* Assign next pointer of a node */
+  void %Aff_adr%( %Pointeur% P, %Pointeur% Q) {
+    if (!P) return; // Check for NULL pointer
+    P->Suiv = Q ;
+  }
+
+  /* Get next node */
+  %Pointeur% %Suivant%( %Pointeur% P) {
+    return ( P ? P->Suiv : NULL ); // Check for NULL pointer
+  }
+
+  /* Get value from a node */
+  %Typeelem% %Valeur%( %Pointeur% P) {
+    if (!P) {
+      // Handle NULL pointer - return default value or error?
+      fprintf(stderr, "Error: Accessing value of NULL node in %Valeur%.\n");
+      %Typeelem% default_val = {0}; // Requires C99+ for generic zero init
+      return default_val; // Return default/zeroed value
+    }
+    return P->Val;
+  }
+
+  /* Free a single node */
+  void %Liberer% ( %Pointeur% P) {
+    free (P);
+    // Does not handle fixing links in the list
+  }
+
+*** R Listes bidirectionnelles ***
+
+  /* Doubly Linked List: Element Type %% */
+  /* Placeholders: %Typeelem%, %Maillon%, %Pointeur%, %Allouer%, %Aff_val%, etc. */
+
+  typedef %% %Typeelem%   ;
+  typedef struct %Maillon% * %Pointeur% ;
+
+  struct %Maillon% {
+    %Typeelem%  Val ;
+    %Pointeur% Suiv ; // Next
+    %Pointeur% Prec ; // Previous
+  };
+
+  /* Allocate a new node */
+  void %Allouer% (%Pointeur% *P) {
+    *P = (%Pointeur%) malloc( sizeof( struct %Maillon% ));
+    if (!*P) { perror("malloc failed in %Allouer%"); return; }
+    // (*P)->Val = /* Default value? */;
+    (*P)->Suiv = NULL;
+    (*P)->Prec = NULL;
+  }
+
+  /* Assign value to a node */
+  void %Aff_val%(%Pointeur% P, %Typeelem% Val) {
+    if (!P) return;
+    // $AFF P->Val $$=$$ Val $AFF;
+    // Transpiler generates: =, memcpy based on %Typeelem%
+  }
+
+  /* Assign Suiv (next/droit) pointer */
+  void %Aff_adrd%( %Pointeur% P, %Pointeur% Q) {
+    if (P) P->Suiv = Q;
+  }
+
+  /* Assign Prec (previous/gauche) pointer */
+  void %Aff_adrg%( %Pointeur% P, %Pointeur% Q) {
+    if (P) P->Prec = Q;
+  }
+
+  /* Get next node */
+  %Pointeur% %Suivant%( %Pointeur% P) {
+    return ( P ? P->Suiv : NULL );
+  }
+
+  /* Get previous node */
+  %Pointeur% %Precedent%( %Pointeur% P) {
+    return ( P ? P->Prec : NULL );
+  }
+
+  /* Get value from a node */
+  %Typeelem% %Valeur%( %Pointeur% P) {
+     if (!P) {
+      fprintf(stderr, "Error: Accessing value of NULL node in %Valeur%.\n");
+      %Typeelem% default_val = {0}; return default_val;
+    }
+    return P->Val;
+  }
+
+  /* Free a single node */
+  void %Liberer% ( %Pointeur% P) {
+   free (P) ;
+   // Does not handle fixing links
+  }
+
+*** Files d'attente ***
+
+  /* Queue: Element Type %% */
+  /* Placeholders: %Typeelem%, %Filedattente% (queue header struct), %Pointeur% (queue header ptr), */
+  /* %Maillon% (node struct), %Ptliste% (node ptr), Function names */
+
+  typedef %% %Typeelem% ;
+  typedef struct %Filedattente% * %Pointeur% ; // Pointer to Queue Header
+  typedef struct %Maillon% * %Ptliste% ;    // Pointer to Queue Node
+
+  struct %Maillon% { // Queue Node
+    %Typeelem% Val ;
+    %Ptliste% Suiv  ;
+  };
+
+  struct %Filedattente% { // Queue Header
+    %Ptliste% Tete;  // Head pointer (front)
+    %Ptliste% Queue; // Tail pointer (rear)
+  };
+
+  /* Create/initialize a queue header */
+  void %Creerfile% ( %Pointeur% *Fil ) { // Takes ptr-to-ptr to header
+    *Fil = (%Pointeur%) malloc( sizeof( struct %Filedattente% ));
+    if (!*Fil) { perror("malloc failed in %Creerfile%"); return; }
+    (*Fil)->Tete = NULL ;
+    (*Fil)->Queue = NULL ;
+  }
+
+  /* Check if queue is empty */
+  bool %Filevide% (%Pointeur% Fil ) { // Takes ptr to header
+    return (Fil ? (Fil->Tete == NULL) : true ); // Handle NULL queue header ptr
+  }
+
+  /* Add element to the rear of the queue */
+  void %Enfiler% ( %Pointeur% Fil , %Typeelem% Val ) { // Takes ptr to header
+    if (!Fil) return; // Check queue header ptr
+
+    %Ptliste% Q = (%Ptliste%) malloc( sizeof( struct %Maillon% )); // Allocate new node
+    if (!Q) { perror("malloc failed in %Enfiler%"); return; }
+
+    // $AFF Q->Val $$=$$ Val $AFF;
+    // Transpiler generates: =, memcpy based on %Typeelem%
+
+    Q->Suiv = NULL;
+
+    if ( ! %Filevide%(Fil) ) { // If queue is not empty
+      Fil->Queue->Suiv = Q ; // Link old tail to new node
+    } else { // Queue was empty
+      Fil->Tete = Q;         // New node is the head
+    }
+    Fil->Queue = Q; // New node is the new tail
+  }
+
+  /* Remove element from the front of the queue */
+  void %Defiler% (%Pointeur% Fil, %Typeelem% *Val ) { // Takes ptr to header, ptr for result
+    if (!Fil || %Filevide%(Fil) ) {
+      // printf ("%s \n", "File d'attente vide"); // Avoid stdout in library
+      // How to signal error? Return bool? Set Val to default?
+      fprintf(stderr, "Warning: Attempt to defiler from empty queue.\n");
+      if (Val) { %Typeelem% default_val = {0}; *Val = default_val; } // Zero out result if pointer provided
+      return;
+    }
+
+    %Ptliste% temp = Fil->Tete; // Node to be removed
+
+    // $AFF *Val $$=$$ Fil->Tete->Val $AFF; // Copy value out
+    // Transpiler generates: =, memcpy based on %Typeelem%
+
+    Fil->Tete = Fil->Tete->Suiv; // Advance head pointer
+
+    // If queue becomes empty, update tail pointer too
+    if (Fil->Tete == NULL) {
+      Fil->Queue = NULL;
+    }
+
+    free(temp); // Free the removed node
+  }
+
+*** Piles ***
+
+  /* Stack: Element Type %% */
+  /* Placeholders: %Typeelem%, %Maillon% (node struct), %Pointeur% (node ptr), */
+  /* %Typepile% (synonym for %Pointeur%), Function names */
+
+  typedef %% %Typeelem% ;
+  typedef struct %Maillon% * %Pointeur% ; // Node pointer
+  typedef %Pointeur% %Typepile%  ;        // Stack type is just pointer to top node
+
+  struct %Maillon% { // Stack Node
+    %Typeelem%  Val ;
+    %Pointeur% Suiv ; // Points to node below
+  };
+
+  /* Initialize an empty stack */
+  void %Creerpile%( %Pointeur% *P ) { // Takes ptr-to-ptr to the stack top variable
+    *P = NULL ;
+  }
+
+  /* Check if stack is empty */
+  bool %Pilevide% ( %Pointeur% P ) { // Takes stack top pointer
+    return (P == NULL );
+  }
+
+  /* Push element onto the stack */
+  void %Empiler% ( %Pointeur% *P, %Typeelem% Val ) { // Takes ptr-to-ptr to stack top
+    %Pointeur% Q = (%Pointeur%) malloc( sizeof( struct %Maillon% )); // New node
+    if (!Q) { perror("malloc failed in %Empiler%"); return; }
+
+    // $AFF Q->Val $$=$$ Val $AFF;
+    // Transpiler generates: =, memcpy based on %Typeelem%
+
+    Q->Suiv = *P; // New node points to old top
+    *P = Q;       // Stack top points to new node
+  }
+
+  /* Pop element from the stack */
+  void %Depiler% ( %Pointeur% *P, %Typeelem% *Val ) { // Takes ptr-to-ptr to stack top, ptr for result
+    if ( %Pilevide% (*P) ) {
+      // printf ("%s \n", "Pile vide"); // Avoid stdout
+      fprintf(stderr, "Warning: Attempt to depiler from empty stack.\n");
+      if (Val) { %Typeelem% default_val = {0}; *Val = default_val; } // Zero out result
+      return;
+    }
+
+    %Pointeur% Sauv = *P; // Node to remove (current top)
+
+    // $AFF *Val $$=$$ (*P)->Val $AFF; // Copy value out
+    // Transpiler generates: =, memcpy based on %Typeelem%
+
+    *P = (*P)->Suiv; // Update stack top to node below
+
+    free(Sauv); // Free the removed node
+  }
+
+*** Arbres de recherche binaire ***
+
+  /* Binary Search Tree: Element Type %% */
+  /* Placeholders: %Typeelem%, %Noeud%, %Pointeur%, Function names */
+
+  typedef %% %Typeelem%   ;
+  typedef struct %Noeud% * %Pointeur% ; // Node pointer
+
+  struct %Noeud% {
+    %Typeelem%  Val ;
+    %Pointeur% Fg ; // Left child
+    %Pointeur% Fd ; // Right child
+    %Pointeur% Pere ; // Parent pointer
+  };
+
+  /* Get node value */
+  %Typeelem% %Info%( %Pointeur% P ) {
+    if (!P) { fprintf(stderr, "Error: Accessing info of NULL node in %Info%.\n"); %Typeelem% default_val = {0}; return default_val; }
+    return P->Val;
+  }
+
+  /* Get left child */
+  %Pointeur% %Fg%( %Pointeur% P) {
+    return P ? P->Fg : NULL;
+  }
+
+  /* Get right child */
+  %Pointeur% %Fd%( %Pointeur% P) {
+    return P ? P->Fd : NULL;
+  }
+
+  /* Get parent */
+  %Pointeur% %Pere%( %Pointeur% P) {
+    return P ? P->Pere : NULL;
+  }
+
+  /* Assign node value */
+  void %Aff_info% ( %Pointeur% P, %Typeelem% Val) {
+    if (!P) return;
+    // $AFF P->Val $$=$$ Val $AFF;
+    // Transpiler generates: =, memcpy based on %Typeelem%
+  }
+
+  /* Assign left child */
+  void %Aff_fg%( %Pointeur% P, %Pointeur% Q) {
+    if (P) P->Fg = Q;
+  }
+
+  /* Assign right child */
+  void %Aff_fd%( %Pointeur% P, %Pointeur% Q) {
+    if (P) P->Fd = Q;
+  }
+
+  /* Assign parent pointer */
+  void %Aff_pere%( %Pointeur% P, %Pointeur% Q) {
+    if (P) P->Pere = Q;
+  }
+
+  /* Allocate a new tree node */
+  void %Creernoeud%( %Pointeur% *P) { // Takes ptr-to-ptr
+    *P = (%Pointeur%) malloc( sizeof( struct %Noeud% ));
+    if (!*P) { perror("malloc failed in %Creernoeud%"); return; }
+    // (*P)->Val = /* default value? */;
+    (*P)->Fg = NULL;
+    (*P)->Fd = NULL;
+    (*P)->Pere = NULL;
+  }
+
+  /* Free a single tree node */
+  void %Liberernoeud%( %Pointeur% P) { // Takes pointer
+    free( P ) ;
+    // Does not handle children or parent pointers
+  }
+
+*** M Arbres de recherche m-aire ***
+
+  /* M-ary Search Tree: Element Type %% */
+  /* Placeholders: %Typeelem%, %Noeud%, %Pointeur%, Ordre_arm (compile-time M), Function names */
+  /* Assumes Ordre_arm is defined via #define or const int by transpiler */
+
+  typedef %% %Typeelem%   ;
+  typedef struct %Noeud% * %Pointeur% ;
+
+  struct %Noeud% {
+    int Degre ; // Number of keys currently in node (0 to Ordre_arm - 1)
+    %Pointeur% Fils[(Ordre_arm)]; // M child pointers (0 to Ordre_arm - 1)
+    %Typeelem% Infor[(Ordre_arm - 1)]; // M-1 keys/info elements (0 to Ordre_arm - 2)
+    %Pointeur% Parent ;
+  };
+  // Note: Template used Infor[(Ordre_arm)], common M-ary/B-trees use M-1 keys. Adjusting here.
+  // Check Z language definition for exact structure.
+
+  /* Get info/key at 1-based index I (maps to C index I-1) */
+  %Typeelem% %Infor%(%Pointeur% P, int I) {
+    if (!P || I < 1 || I > P->Degre) { fprintf(stderr, "Error: Invalid index %d for node degree %d in %Infor%.\n", I, P ? P->Degre : -1); %Typeelem% dv={0}; return dv;}
+    return P->Infor[I-1] ;
+  }
+
+  /* Get child pointer at 1-based index I (maps to C index I-1) */
+  %Pointeur% %Fils%( %Pointeur% P, int I) {
+    // Child indices range from 0 to Degre (inclusive)
+    if (!P || I < 1 || I > P->Degre + 1 || I > Ordre_arm) { fprintf(stderr, "Error: Invalid child index %d for node degree %d in %Fils%.\n", I, P ? P->Degre : -1); return NULL;}
+    return P->Fils[I-1] ;
+  }
+
+  /* Get parent pointer */
+  %Pointeur% %Parent%( %Pointeur% P) {
+    return P ? P->Parent : NULL;
+  }
+
+  /* Assign info/key at 1-based index I */
+  void %Aff_infor% ( %Pointeur% P, int I, %Typeelem% Val) {
+    // Allows setting up to Ordre_arm-1 keys (C indices 0 to Ordre_arm-2)
+    if (!P || I < 1 || I > Ordre_arm - 1) { fprintf(stderr, "Error: Invalid index %d in %Aff_infor%.\n", I); return; }
+    // $AFF P->Infor[I-1] $$=$$ Val $AFF;
+    // Transpiler generates: =, memcpy based on %Typeelem%
+  }
+
+  /* Assign child pointer at 1-based index I */
+  void %Aff_fils%( %Pointeur% P, int I, %Pointeur% Q) {
+    // Allows setting up to Ordre_arm children (C indices 0 to Ordre_arm-1)
+    if (P && I >= 1 && I <= Ordre_arm) {
+        P->Fils[I-1] = Q ;
+    } else {
+        fprintf(stderr, "Error: Invalid index %d in %Aff_fils%.\n", I);
+    }
+  }
+
+  /* Assign parent pointer */
+  void %Aff_parent%( %Pointeur% P, %Pointeur% Q) {
+    if(P) P->Parent = Q ;
+  }
+
+  /* Allocate a new M-ary node */
+  void %Creernoeud%( %Pointeur% *P ) { // Takes ptr-to-ptr
+    int I ;
+    *P = (%Pointeur%) malloc( sizeof( struct %Noeud% ));
+    if (!*P) { perror("malloc failed in %Creernoeud%"); return; }
+
+    (*P)->Degre = 0 ;
+    (*P)->Parent = NULL;
+    // Initialize child pointers and potentially keys
+    for (I=0; I < Ordre_arm; ++I) {
+        (*P)->Fils[I] = NULL;
+        // if (I < Ordre_arm - 1) { // Initialize keys?
+        //   %Typeelem% default_key = {0};
+        //   (*P)->Infor[I] = default_key;
+        // }
+    }
+  }
+
+  /* Get degree (number of keys) */
+  int %Degre% ( %Pointeur% P ) {
+    return P ? P->Degre : 0; // Return 0 for NULL node?
+  }
+
+  /* Set degree */
+  void %Aff_degre% ( %Pointeur% P, int N) {
+    // Add check: 0 <= N < Ordre_arm ?
+    if (P) P->Degre = N ;
+  }
+
+  /* Free a single M-ary node */
+  void %Liberernoeud%(%Pointeur% P) {
+    free ( P );
+    // Does not handle children or parent pointers
+  }
+
+*** W Init_struct Statique ***
+
+  /* Initialize Static Structure */
+  /* %Init_struct%: Function Name */
+  /* %Types%: Struct Name (e.g., Personne) */
+  /* Typestr_%Types%: Struct Pointer Type (e.g., Personne*) */
+  /* %Typestruct%: Struct Type (e.g., Personne) */
+  /* Transpiler loops through fields using index %I% and name Champ%I% */
+
+  // S is pointer to target struct, S_ is source struct value
+  void %Init_struct% ( Typestr_%Types% S, %Typestruct% S_ ) {
+    if (!S) return;
+    // Option 1: Transpiler generates field-by-field copy using $AFF logic
+// 1   // $AFF S->Champ%I% $$=$$ S_.Champ%I% $AFF; // Generate for each field
+
+    // Option 2: Simple whole-struct copy (if appropriate)
+    *S = S_; // Assumes C struct assignment works as intended
+    // Option 3: memcpy(S, &S_, sizeof(%Typestruct%));
+  }
+
+*** W Init_struct Dynamique ***
+
+  /* Initialize Dynamic Structure */
+  /* %Init_struct%: Function Name */
+  /* %Pointeur%: Struct Pointer Type (e.g., PersonnePtr) */
+  /* %Typestruct%: Struct Type (e.g., Personne) */
+  /* Transpiler loops through fields using index %I% and name Champ%I% */
+
+  // S is pointer to target struct, S_ is source struct value
+  void %Init_struct% ( %Pointeur% S, %Typestruct% S_ ) {
+     if (!S) return;
+    // Option 1: Transpiler generates field-by-field copy using $AFF logic
+// 1   // $AFF S->Champ%I% $$=$$ S_.Champ%I% $AFF; // Generate for each field
+
+    // Option 2: Simple whole-struct copy (if appropriate)
+    *S = S_; // Assumes C struct assignment works as intended
+    // Option 3: memcpy(S, &S_, sizeof(%Typestruct%));
+  }
+
+*** W Init_vect Statique ***
+
+  /* Initialize Static Array */
+  /* %Init_vect%: Function Name */
+  /* %Typevect%: Target static array type (e.g., int[10] or signature using dims) */
+  /* %Typetab%: Source C array type (e.g., const int[]) */
+  /* N: Number of elements to copy from Tab */
+  /* Transpiler generates loop structure based on target dims (%I%, %N%) */
+  /* Transpiler generates target index calculation (AUTRES2) */
+
+  // T is target static array (passed as pointer), Tab is source C array
+  void %Init_vect% ( void* T , const void* Tab , int N, size_t element_size /*, dimensions... */) {
+    // Transpiler generates loops based on target dimensions
+    int K = 0; // Source array index
+// 1  // int I1 AUTRES1; // Loop variables declared by transpiler
+// 2  // for (%I%=0; %I%< %N%; ++%I%) { // Loops generated by transpiler
+        if (K >= N) return; // Stop if source exhausted
+
+        // AUTRES2 is the target element index calculation generated by transpiler
+        void* target_element_ptr = (char*)T + (AUTRES2) * element_size;
+        const void* source_element_ptr = (const char*)Tab + K * element_size;
+
+        // Assignment using $AFF logic (memcpy for generic case)
+// 3     // $AFF *(T + AUTRES2) $$=$$ Tab [K] $AFF;
+        memcpy(target_element_ptr, source_element_ptr, element_size);
+
+        K++;
+//     // } // End loops generated by transpiler
+  }
+
+*** W Init_vect Dynamique ***
+
+  /* Initialize Dynamic Array */
+  /* %Init_vect%: Function Name */
+  /* %Pointeur%: Target dynamic array pointer type (e.g., int*) */
+  /* %Typetab%: Source C array type (e.g., const int[]) */
+  /* N: Number of elements to copy from Tab */
+  /* Transpiler needs target dimensions for loops (%I%, %N%) and index (AUTRES2) */
+
+  // T is target dynamic array pointer, Tab is source C array
+  void %Init_vect% ( %Pointeur% T , const void* Tab , int N, size_t element_size /*, dimensions... */) {
+    if (!T) return; // Check target pointer
+
+    // Transpiler generates loops based on target dimensions
+    int K = 0; // Source array index
+// 1  // int I1 AUTRES1; // Loop variables declared by transpiler
+// 2  // for (%I%=0; %I%< %N%; ++%I%) { // Loops generated by transpiler
+        if (K >= N) return; // Stop if source exhausted
+
+        // AUTRES2 is the target element index calculation generated by transpiler
+        // For dynamic arrays, T is already ElementType*, so pointer arithmetic works directly
+        %Pointeur% target_element_ptr = T + (AUTRES2);
+        const void* source_element_ptr = (const char*)Tab + K * element_size;
+
+        // Assignment using $AFF logic (memcpy for generic case)
+// 3     // $AFF *(T + AUTRES2) $$=$$ Tab [K] $AFF;
+        memcpy(target_element_ptr, source_element_ptr, element_size);
+
+        K++;
+//     // } // End loops generated by transpiler
+  }
+
+*** W Creer_pile ***
+
+  /* Create Stack from Array */
+  /* %Creer_pile%: Function Name */
+  /* %Pointeur%: Stack node pointer type */
+  /* %Typetab%: Source C array type (e.g., const int[]) */
+  /* N: Number of elements in Tab */
+  /* %Creerpile%, %Empiler% = names of basic stack ops */
+
+  // Creates stack *P with elements from Tab[0]..Tab[N-1]. Tab[N-1] is top.
+  void %Creer_pile% ( %Pointeur% *P, const void* Tab, int N, size_t element_size ) {
+    int I;
+    %Creerpile% ( P ); // Initialize P to empty stack (*P = NULL)
+
+    // Push elements from Tab[0] up to Tab[N-1]
+    for (I = 0; I < N; ++I) {
+      // Need to get the actual element value from Tab[I]
+      %Typeelem% current_element; // Requires %Typeelem% definition
+      memcpy(¤t_element, (const char*)Tab + I * element_size, element_size);
+      %Empiler% (P, current_element);
+    }
+  }
+
+*** W Creer_file ***
+
+  /* Create Queue from Array */
+  /* %Creer_file%: Function Name */
+  /* %Pointeur%: Queue header pointer type */
+  /* %Typetab%: Source C array type */
+  /* N: Number of elements */
+  /* %Creerfile%, %Enfiler% = names of basic queue ops */
+
+  // Creates queue *F with elements Tab[0]..Tab[N-1]. Tab[0] is head.
+  void %Creer_file% ( %Pointeur% *F, const void* Tab, int N, size_t element_size ) {
+    int I;
+    %Creerfile% ( F ); // Initialize F (allocates header, sets head/tail NULL)
+    if (!*F) return; // Check if creation succeeded
+
+    for (I = 0; I < N; ++I) {
+      %Typeelem% current_element; // Requires %Typeelem% definition
+      memcpy(¤t_element, (const char*)Tab + I * element_size, element_size);
+      %Enfiler% (*F, current_element); // Enfiler takes queue header pointer
+    }
+  }
+
+*** W Creer_liste ***
+
+  /* Create Singly Linked List from Array */
+  /* %Creer_liste%: Function Name */
+  /* %Pointeur%: List node pointer type */
+  /* %Typetab%: Source C array type */
+  /* N: Number of elements */
+  /* %Allouer%, %Aff_val%, %Aff_adr% = names of basic list ops */
+
+  // Creates list *L with elements Tab[0]..Tab[N-1]. Tab[0] is first.
+  void %Creer_liste% ( %Pointeur% *L, const void* Tab, int N, size_t element_size ) {
+    int I ;
+    %Pointeur% P = NULL; // Previous node
+    %Pointeur% Q = NULL; // New node
+
+    *L = NULL; // Start empty
+
+    if (N <= 0) return;
+
+    for( I = 0; I < N; ++I) {
+      %Allouer%( &Q ) ; // Allocate new node Q (sets Suiv=NULL)
+      if (!Q) { /* Handle allocation error; maybe free previously created nodes? */ *L = NULL; return; }
+
+      %Typeelem% current_element; // Requires %Typeelem% definition
+      memcpy(¤t_element, (const char*)Tab + I * element_size, element_size);
+      %Aff_val% (Q, current_element); // Assign value using appropriate method
+
+      if (*L == NULL) { // First node
+        *L = Q ;
+      } else { // Not first node
+        %Aff_adr% (P, Q); // Link previous (P) to current (Q)
+      }
+      P = Q ; // Current becomes previous for next iteration
+    }
+  }
+
+*** W Creer_listebi ***
+
+  /* Create Doubly Linked List from Array */
+  /* %Creer_listebi%: Function Name */
+  /* %Pointeur%: Node pointer type */
+  /* %Typetab%: Source C array type */
+  /* N: Number of elements */
+  /* %Allouer%, %Aff_val%, %Aff_adrg%, %Aff_adrd% = names of basic list ops */
+
+  // Creates list *L with Tab[0]..Tab[N-1].
+  void %Creer_listebi% ( %Pointeur% *L, const void* Tab, int N, size_t element_size ) {
+    int I;
+    %Pointeur% P = NULL; // Previous node
+    %Pointeur% Q = NULL; // New node
+
+    *L = NULL; // Start empty
+
+    if (N <= 0) return;
+
+    for (I = 0; I < N; ++I) {
+      %Allouer%( &Q ) ; // Alloc new node Q (sets Suiv/Prec=NULL)
+      if (!Q) { /* Handle error */ *L = NULL; return; }
+
+      %Typeelem% current_element; // Requires %Typeelem% definition
+      memcpy(¤t_element, (const char*)Tab + I * element_size, element_size);
+      %Aff_val% (Q, current_element);
+
+      // Set links
+      %Aff_adrg%(Q, P); // New node's prev points to previous node P
+
+      if (*L == NULL) { // First node
+        *L = Q ;
+      } else { // Not first node
+        %Aff_adrd% (P, Q); // Previous node P's next points to new node Q
+      }
+      P = Q; // Current becomes previous for next iteration
+    }
+  }
+
+*** W Creer_arb Simple ***
+
+  /* Create Binary Search Tree from Simple Array */
+  /* %Creer_arb%: Function Name */
+  /* %Pointeur%: Node pointer type */
+  /* %Typetab%: Source C array type (of %Typeelem%) */
+  /* N: Number of elements */
+  /* %Creernoeud%, %Aff_info%, %Info%, %Fg%, %Fd%, %Aff_fg%, etc. = BST op names */
+  /* $COMPAR requires transpiler to generate comparison code based on %Typeelem% */
+
+  // Creates BST *Arbre from Tab[0]..Tab[N-1]. Assumes simple comparable elements.
+  void %Creer_arb% ( %Pointeur% *Arbre, const void* Tab, int N, size_t element_size /*, comparison_function */) {
+    int I;
+    %Pointeur% P, Q, ParentNode; // P = current traversal, Q = new node, ParentNode = parent of P
+
+    *Arbre = NULL;
+    if (N <= 0) return;
+
+    // Process Root (Tab[0])
+    %Creernoeud% ( &P );
+    if (!P) return; // Malloc check
+    *Arbre = P;
+    %Typeelem% root_element;
+    memcpy(&root_element, (const char*)Tab + 0 * element_size, element_size);
+    %Aff_info% ( P, root_element );
+
+    // Insert remaining elements Tab[1] to Tab[N-1]
+    for (I = 1; I < N; ++I) {
+      ParentNode = NULL;
+      P = *Arbre; // Start search from root for each element
+      %Typeelem% current_element;
+      memcpy(¤t_element, (const char*)Tab + I * element_size, element_size);
+
+      // Find insertion point
+      while (P != NULL) {
+        ParentNode = P;
+        // Compare current_element with value at node P (%Info%(P))
+        // Result = $COMPAR current_element $$op$$ %Info%(P) $; (op is <, >, ==)
+        // Needs comparison logic based on %Typeelem% generated by transpiler
+        int comparison_result; // = compare(current_element, %Info%(P));
+
+        if (comparison_result < 0) { // Go left
+          P = %Fg%(P);
+        } else if (comparison_result > 0) { // Go right
+          P = %Fd%(P);
+        } else { // Duplicate key found
+          // printf ("%s\n", "Un double existe"); // Avoid stdout
+          ParentNode = NULL; // Signal duplicate by clearing ParentNode
+          break; // Stop searching for this duplicate element
+        }
+      } // End while (P != NULL)
+
+      // Insert if not duplicate and ParentNode is valid
+      if (ParentNode != NULL) {
+        %Creernoeud% ( &Q ); // Create new node
+        if (!Q) continue; // Malloc check, skip element if failed
+        %Aff_info% ( Q, current_element ); // Set its value
+        %Aff_pere% ( Q, ParentNode ); // Set its parent link
+
+        // Link from parent
+        // Re-compare with parent to decide left/right
+        int comparison_result_parent; // = compare(current_element, %Info%(ParentNode));
+        if (comparison_result_parent < 0) {
+          %Aff_fg% ( ParentNode, Q ); // Link as left child
+        } else {
+          %Aff_fd% ( ParentNode, Q ); // Link as right child
+        }
+      } // End if (ParentNode != NULL)
+    } // End for loop
+  }
+
+*** W Creer_arb Structure ***
+
+  /* Create Binary Search Tree from Struct Array */
+  /* Assumes comparison based on a specific key field (e.g., Champ1) */
+  /* %Type_element%: Struct type stored in the tree (e.g., Personne) */
+  /* Struct1_%Type_element%: Accessor for the key field */
+  /* Other placeholders same as Simple version */
+
+  void %Creer_arb% ( %Pointeur% *Arbre, const void* Tab, int N, size_t element_size /*, key_comparison_function */ ) {
+    int I;
+    %Pointeur% P, Q, ParentNode;
+
+    *Arbre = NULL;
+    if (N <= 0) return;
+
+    // Process Root (Tab[0])
+    %Creernoeud% ( &P );
+    if (!P) return;
+    *Arbre = P;
+    // Assign the *whole* struct from Tab[0] to the node's Val field
+    %Typeelem% root_element; // %Typeelem% is the struct type
+    memcpy(&root_element, (const char*)Tab + 0 * element_size, element_size);
+    %Aff_info% ( P, root_element );
+
+    // Insert remaining elements
+    for (I = 1; I < N; ++I) {
+      ParentNode = NULL;
+      P = *Arbre;
+      %Typeelem% current_element_struct; // The struct from Tab[I]
+      memcpy(¤t_element_struct, (const char*)Tab + I * element_size, element_size);
+      // Extract key from current_element_struct for comparison
+      // KeyType current_key = Struct1_%Type_element%(current_element_struct); // Generated by transpiler
+
+      while (P != NULL) {
+        ParentNode = P;
+        // Get node's struct value, then extract its key
+        %Typeelem% node_element_struct = %Info%(P);
+        // KeyType node_key = Struct1_%Type_element%(node_element_struct); // Generated by transpiler
+
+        // Compare current_key with node_key
+        // Result = $COMPAR current_key $$op$$ node_key $;
+        int comparison_result; // = compare_keys(current_key, node_key);
+
+        if (comparison_result < 0) { P = %Fg%(P); }
+        else if (comparison_result > 0) { P = %Fd%(P); }
+        else { ParentNode = NULL; break; } // Duplicate key
+      } // End while
+
+      if (ParentNode != NULL) { // Insert
+        %Creernoeud% ( &Q );
+        if (!Q) continue;
+        // Assign the *whole* struct to the new node
+        %Aff_info% ( Q, current_element_struct );
+        %Aff_pere% ( Q, ParentNode );
+
+        // Re-compare with parent key to link
+        %Typeelem% parent_element_struct = %Info%(ParentNode);
+        // KeyType parent_key = Struct1_%Type_element%(parent_element_struct);
+        // KeyType current_key = Struct1_%Type_element%(current_element_struct);
+        int comparison_result_parent; // = compare_keys(current_key, parent_key);
+
+        if (comparison_result_parent < 0) { %Aff_fg% ( ParentNode, Q ); }
+        else { %Aff_fd% ( ParentNode, Q ); }
+      } // End if insert
+    } // End for
+  }
+
+*** Creer_arm Simple ***
+
+  /* Create M-ary Tree from Simple Array (Simplified Insertion) */
+  /* %Creer_arm%: Function Name */
+  /* %Pointeur%: Node pointer type */
+  /* %Typetab%: Source C array type */
+  /* N: Number of elements */
+  /* Ordre: The 'M' value (passed as param) */
+  /* %Creernoeud%, %Aff_degre%, %Aff_infor%, etc. = M-ary op names */
+  /* $COMPAR needs comparison logic for %Typeelem% */
+
+  // Creates M-ary tree *Arbre. Uses simplified insertion (new child node on full).
+  void %Creer_arm% (%Pointeur% *Arbre, const void* Tab, int N, int Ordre, size_t element_size /*, comparison_func */) {
+    bool Trouv1; // Duplicate key found in tree
+    bool Trouv2; // Found position within a node (key >= search_key)
+    int I, J, Pos; // Loop indices, Position (1-based) in node's Infor/Fils
+    int Nt; // Temp for node degree
+    %Pointeur% P, Q, R ; // P=current traversal, Q=parent/insert_node, R=new_node
+
+    *Arbre = NULL;
+    if (N <= 0 || Ordre <= 1) return; // Basic validation
+
+    // Process Root (Tab[0])
+    %Creernoeud% ( &P );
+    if (!P) return;
+    *Arbre = P;
+    %Aff_degre% ( P, 1 );
+    %Typeelem% root_element;
+    memcpy(&root_element, (const char*)Tab + 0 * element_size, element_size);
+    %Aff_infor% ( P, 1, root_element ); // Set first key
+
+    // Process remaining elements Tab[1] to Tab[N-1]
+    for (I = 1; I < N; ++I ) {
+      P = *Arbre; // Start search from root
+      Q = NULL; // Parent/node found
+      Trouv1 = false; // Reset duplicate flag
+      %Typeelem% current_element;
+      memcpy(¤t_element, (const char*)Tab + I * element_size, element_size);
+
+      // Search for insertion node Q and position Pos
+      while (P != NULL && !Trouv1) {
+        Q = P; // Q is the node we are examining
+        Trouv2 = false; // Reset found position flag
+        Pos = 1; // 1-based index for Infor/Fils
+
+        // Find first Pos where Infor(Q, Pos) >= current_element
+        while (!Trouv2 && (Pos <= %Degre%(Q))) {
+          // compare(current_element, %Infor%(Q, Pos)) -> comparison_result
+          int comparison_result; // = compare(current_element, %Infor%(Q, Pos));
+          if (comparison_result <= 0) { // Found element >= current
+            Trouv2 = true;
+            if (comparison_result == 0) { // Duplicate
+              Trouv1 = true;
+              // printf("Duplicate found\n");
+            }
+          } else {
+            Pos++; // Check next key
+          }
+        } // End while search in node
+
+        if (!Trouv1) { // If not duplicate, decide which child to follow
+          // Pos is now the 1-based index of the child to follow
+          // (or Degre+1 if current_element > all keys)
+          P = %Fils%(Q, Pos);
+        }
+      } // End while search tree (P == NULL or Trouv1 == true)
+
+      // Insert if not duplicate (Q holds the node for insertion)
+      if (!Trouv1 && Q != NULL) { // Ensure Q is valid
+        // Check if node Q has space (Degre < Ordre - 1 keys)
+        if (%Degre%(Q) < Ordre - 1) {
+          // Insert current_element into node Q at position Pos
+          Nt = %Degre%(Q);
+          // Shift keys and child pointers from Pos onwards right
+          for (J = Nt; J >= Pos; --J) {
+            %Aff_infor% ( Q, J + 1, %Infor%(Q, J) );
+            %Aff_fils% ( Q, J + 2, %Fils%(Q, J + 1) ); // Shift child J+1 to J+2
+          }
+          // Insert new key and NULL child pointer after it
+          %Aff_infor% ( Q, Pos, current_element );
+          %Aff_fils% ( Q, Pos + 1, NULL ); // Child pointer after new key
+          %Aff_degre% ( Q, Nt + 1 ); // Increment degree
+        } else { // Node Q is full - SIMPLIFIED INSERTION (create child)
+          %Creernoeud% ( &R ); // New child node
+          if (!R) continue; // Malloc check
+
+          %Aff_degre% ( R, 1 ); // New node R has 1 key
+          %Aff_infor% ( R, 1, current_element ); // Store key in R
+          %Aff_parent% ( R, Q ); // Set R's parent
+
+          // Link R as the child of Q at position Pos
+          %Aff_fils% ( Q, Pos, R );
+          // NOTE: This does not preserve M-ary/B-tree properties fully.
+        } // End if node full/not full
+      } // End if (!Trouv1 && Q != NULL)
+    } // End for loop
+  }
+
+*** Creer_arm Structure ***
+
+  /* Create M-ary Tree from Struct Array (Simplified Insertion) */
+  /* Assumes comparison based on a key field accessed via Struct1_%Type_element% */
+  /* Other placeholders same as Simple version */
+
+  void %Creer_arm% (%Pointeur% *Arbre, const void* Tab, int N, int Ordre, size_t element_size /*, key_comparison_function */) {
+    bool Trouv1, Trouv2;
+    int I, J, Pos, Nt;
+    %Pointeur% P, Q, R ;
+
+    *Arbre = NULL;
+    if (N <= 0 || Ordre <= 1) return;
+
+    // Process Root (Tab[0])
+    %Creernoeud% ( &P );
+    if (!P) return;
+    *Arbre = P;
+    %Aff_degre% ( P, 1 );
+    %Typeelem% root_element_struct; // %Typeelem% is the struct type
+    memcpy(&root_element_struct, (const char*)Tab + 0 * element_size, element_size);
+    %Aff_infor% ( P, 1, root_element_struct ); // Store first struct
+
+    // Process remaining elements
+    for (I = 1; I < N; ++I ) {
+      P = *Arbre;
+      Q = NULL;
+      Trouv1 = false;
+      %Typeelem% current_element_struct;
+      memcpy(¤t_element_struct, (const char*)Tab + I * element_size, element_size);
+      // KeyType current_key = Struct1_%Type_element%(current_element_struct); // Extract key
+
+      // Search for insertion node Q and position Pos
+      while (P != NULL && !Trouv1) {
+        Q = P;
+        Trouv2 = false;
+        Pos = 1;
+        while (!Trouv2 && (Pos <= %Degre%(Q))) {
+          %Typeelem% node_element_struct = %Infor%(Q, Pos);
+          // KeyType node_key = Struct1_%Type_element%(node_element_struct);
+          // compare(current_key, node_key) -> comparison_result
+          int comparison_result; // = compare_keys(current_key, node_key);
+
+          if (comparison_result <= 0) {
+            Trouv2 = true;
+            if (comparison_result == 0) Trouv1 = true; // Duplicate
+          } else {
+            Pos++;
+          }
+        } // End while search node
+
+        if (!Trouv1) P = %Fils%(Q, Pos); // Follow appropriate child pointer
+      } // End while search tree
+
+      // Insert if not duplicate
+      if (!Trouv1 && Q != NULL) {
+        if (%Degre%(Q) < Ordre - 1) { // Node has space
+          Nt = %Degre%(Q);
+          for (J = Nt; J >= Pos; --J) {
+            %Aff_infor% ( Q, J + 1, %Infor%(Q, J) );
+            %Aff_fils% ( Q, J + 2, %Fils%(Q, J + 1) );
+          }
+          %Aff_infor% ( Q, Pos, current_element_struct ); // Store whole struct
+          %Aff_fils% ( Q, Pos + 1, NULL );
+          %Aff_degre% ( Q, Nt + 1 );
+        } else { // Node full - SIMPLIFIED INSERT (create child)
+          %Creernoeud% ( &R );
+          if (!R) continue;
+          %Aff_degre% ( R, 1 );
+          %Aff_infor% ( R, 1, current_element_struct ); // Store struct in new node
+          %Aff_parent% ( R, Q );
+          %Aff_fils% ( Q, Pos, R );
+        } // End if node full/not full
+      } // End if insert
+    } // End for loop
+  }
